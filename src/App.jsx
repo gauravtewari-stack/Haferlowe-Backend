@@ -223,21 +223,24 @@ const MOCK_FEED_ITEMS = [
 
 // Feedback Rules - Progress Logic Engine
 const MOCK_FEEDBACK_RULES = [
-  // Weight Rules - Relative Logic (Trends)
+  // ============ WEIGHT LOSS RULES ============
+  // Weight Loss - Relative Logic (Trends)
   {
     id: 'fr1',
     metric: 'Weight',
+    goalType: 'loss',
     logicType: 'relative',
     condition: 'decrease_by',
     value: 0.5,
     unit: 'kg',
-    message: 'Nice progress! Every small step counts toward your goal.',
+    message: 'Nice progress! Every small step counts toward your weight loss goal.',
     type: 'success',
     isActive: true
   },
   {
     id: 'fr2',
     metric: 'Weight',
+    goalType: 'loss',
     logicType: 'relative',
     condition: 'decrease_by',
     value: 1.0,
@@ -249,6 +252,7 @@ const MOCK_FEEDBACK_RULES = [
   {
     id: 'fr3',
     metric: 'Weight',
+    goalType: 'loss',
     logicType: 'relative',
     condition: 'increase_by',
     value: 1.0,
@@ -257,10 +261,11 @@ const MOCK_FEEDBACK_RULES = [
     type: 'warning',
     isActive: true
   },
-  // Weight Rules - Milestone Logic (Goal-Based)
+  // Weight Loss - Milestone Logic
   {
     id: 'fr4',
     metric: 'Weight',
+    goalType: 'loss',
     logicType: 'milestone',
     condition: 'reach_percent',
     value: 25,
@@ -272,6 +277,7 @@ const MOCK_FEEDBACK_RULES = [
   {
     id: 'fr5',
     metric: 'Weight',
+    goalType: 'loss',
     logicType: 'milestone',
     condition: 'reach_percent',
     value: 50,
@@ -283,11 +289,88 @@ const MOCK_FEEDBACK_RULES = [
   {
     id: 'fr6',
     metric: 'Weight',
+    goalType: 'loss',
     logicType: 'milestone',
     condition: 'reach_percent',
     value: 100,
     unit: '%',
-    message: 'Congratulations! You have reached your target weight! Time to maintain.',
+    message: 'Congratulations! You have reached your target weight!',
+    type: 'success',
+    isActive: true
+  },
+
+  // ============ WEIGHT GAIN RULES ============
+  // Weight Gain - Relative Logic (Trends)
+  {
+    id: 'fr10',
+    metric: 'Weight',
+    goalType: 'gain',
+    logicType: 'relative',
+    condition: 'increase_by',
+    value: 0.5,
+    unit: 'kg',
+    message: 'Great progress! You are gaining weight steadily toward your goal.',
+    type: 'success',
+    isActive: true
+  },
+  {
+    id: 'fr11',
+    metric: 'Weight',
+    goalType: 'gain',
+    logicType: 'relative',
+    condition: 'increase_by',
+    value: 1.0,
+    unit: 'kg',
+    message: 'Excellent! You have gained 1kg this week. Keep up the good work!',
+    type: 'success',
+    isActive: true
+  },
+  {
+    id: 'fr12',
+    metric: 'Weight',
+    goalType: 'gain',
+    logicType: 'relative',
+    condition: 'decrease_by',
+    value: 1.0,
+    unit: 'kg',
+    message: 'Your weight has decreased. Consider reviewing your nutrition intake.',
+    type: 'warning',
+    isActive: true
+  },
+  // Weight Gain - Milestone Logic
+  {
+    id: 'fr13',
+    metric: 'Weight',
+    goalType: 'gain',
+    logicType: 'milestone',
+    condition: 'reach_percent',
+    value: 25,
+    unit: '%',
+    message: 'Amazing! You are 25% of the way to your target weight!',
+    type: 'success',
+    isActive: true
+  },
+  {
+    id: 'fr14',
+    metric: 'Weight',
+    goalType: 'gain',
+    logicType: 'milestone',
+    condition: 'reach_percent',
+    value: 50,
+    unit: '%',
+    message: 'Halfway there! You have reached 50% of your weight gain goal!',
+    type: 'success',
+    isActive: true
+  },
+  {
+    id: 'fr15',
+    metric: 'Weight',
+    goalType: 'gain',
+    logicType: 'milestone',
+    condition: 'reach_percent',
+    value: 100,
+    unit: '%',
+    message: 'Congratulations! You have reached your target weight!',
     type: 'success',
     isActive: true
   },
@@ -1770,6 +1853,7 @@ const CourseCMS = ({ courses }) => (
 // 7. FEEDBACK LOGIC ENGINE COMPONENT
 const FeedbackLogic = ({ rules, setRules, hba1cScale, setHba1cScale, showToast }) => {
   const [activeMetricTab, setActiveMetricTab] = useState('Weight');
+  const [activeGoalType, setActiveGoalType] = useState('loss'); // 'loss' or 'gain'
   const [isEditing, setIsEditing] = useState(false);
   const [currentRule, setCurrentRule] = useState(null);
   const [isEditingScale, setIsEditingScale] = useState(false);
@@ -1777,6 +1861,7 @@ const FeedbackLogic = ({ rules, setRules, hba1cScale, setHba1cScale, showToast }
   // Form state for rule editor (Weight only)
   const initialFormState = {
     metric: 'Weight',
+    goalType: 'loss',
     logicType: 'relative',
     condition: 'decrease_by',
     value: 1.0,
@@ -1791,24 +1876,47 @@ const FeedbackLogic = ({ rules, setRules, hba1cScale, setHba1cScale, showToast }
   // HbA1c Scale editing state
   const [scaleForm, setScaleForm] = useState(hba1cScale);
 
-  // Get conditions for Weight metric
-  const getConditionsForMetric = () => {
-    return [
-      { value: 'decrease_by', label: 'Decreases By', logicType: 'relative', unit: 'kg' },
-      { value: 'increase_by', label: 'Increases By', logicType: 'relative', unit: 'kg' },
-      { value: 'reach_percent', label: 'Reaches % of Goal', logicType: 'milestone', unit: '%' }
-    ];
+  // Get conditions for Weight metric based on goal type
+  const getConditionsForGoalType = (goalType) => {
+    if (goalType === 'loss') {
+      return [
+        { value: 'decrease_by', label: 'Decreases By', logicType: 'relative', unit: 'kg', feedbackType: 'success' },
+        { value: 'increase_by', label: 'Increases By', logicType: 'relative', unit: 'kg', feedbackType: 'warning' },
+        { value: 'reach_percent', label: 'Reaches % of Goal', logicType: 'milestone', unit: '%', feedbackType: 'success' }
+      ];
+    } else {
+      return [
+        { value: 'increase_by', label: 'Increases By', logicType: 'relative', unit: 'kg', feedbackType: 'success' },
+        { value: 'decrease_by', label: 'Decreases By', logicType: 'relative', unit: 'kg', feedbackType: 'warning' },
+        { value: 'reach_percent', label: 'Reaches % of Goal', logicType: 'milestone', unit: '%', feedbackType: 'success' }
+      ];
+    }
   };
 
   // Handle condition change - update logicType and unit accordingly
   const handleConditionChange = (conditionValue) => {
-    const conditions = getConditionsForMetric();
+    const conditions = getConditionsForGoalType(formData.goalType);
     const selectedCondition = conditions.find(c => c.value === conditionValue);
     setFormData({
       ...formData,
       condition: conditionValue,
       logicType: selectedCondition?.logicType || 'relative',
-      unit: selectedCondition?.unit || 'kg'
+      unit: selectedCondition?.unit || 'kg',
+      type: selectedCondition?.feedbackType || 'success'
+    });
+  };
+
+  // Handle goal type change in form
+  const handleGoalTypeChange = (goalType) => {
+    const conditions = getConditionsForGoalType(goalType);
+    const firstCondition = conditions[0];
+    setFormData({
+      ...formData,
+      goalType,
+      condition: firstCondition.value,
+      logicType: firstCondition.logicType,
+      unit: firstCondition.unit,
+      type: firstCondition.feedbackType
     });
   };
 
@@ -1888,8 +1996,17 @@ const FeedbackLogic = ({ rules, setRules, hba1cScale, setHba1cScale, showToast }
     setRules(rules.map(r => r.id === ruleId ? { ...r, isActive: !r.isActive } : r));
   };
 
-  // Filter rules by metric
-  const filteredRules = rules.filter(r => r.metric === activeMetricTab);
+  // Filter rules by metric and goal type
+  const filteredRules = activeMetricTab === 'Weight'
+    ? rules.filter(r => r.metric === 'Weight' && r.goalType === activeGoalType)
+    : rules.filter(r => r.metric === activeMetricTab);
+
+  // Count rules by goal type for badges
+  const weightLossRulesCount = rules.filter(r => r.metric === 'Weight' && r.goalType === 'loss').length;
+  const weightGainRulesCount = rules.filter(r => r.metric === 'Weight' && r.goalType === 'gain').length;
+
+  // Get goal type label
+  const getGoalTypeLabel = (goalType) => goalType === 'loss' ? 'Weight Loss' : 'Weight Gain';
 
   // Get readable condition text
   const getConditionText = (rule) => {
@@ -1941,43 +2058,51 @@ const FeedbackLogic = ({ rules, setRules, hba1cScale, setHba1cScale, showToast }
               </h3>
 
               {/* Sentence Preview */}
-              <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 mb-6">
-                <p className="text-sm text-gray-500 mb-1">Rule Preview:</p>
+              <div className={`p-4 rounded-lg border mb-6 ${
+                formData.goalType === 'loss' ? 'bg-emerald-50 border-emerald-200' : 'bg-blue-50 border-blue-200'
+              }`}>
+                <p className="text-sm text-gray-500 mb-1">Rule Preview ({formData.goalType === 'loss' ? 'Weight Loss' : 'Weight Gain'} users):</p>
                 <p className="text-gray-800 font-medium">
-                  WHEN <span className="text-emerald-600">{formData.metric}</span>{' '}
+                  WHEN <span className="text-emerald-600">weight</span>{' '}
                   <span className="text-blue-600">{getConditionText(formData)}</span>{' '}
                   <span className="text-purple-600">{formData.value}{formData.unit}</span>{' '}
                   THEN show <span className={formData.type === 'success' ? 'text-green-600' : 'text-amber-600'}>{formData.type}</span> message
                 </p>
               </div>
 
-              {/* Metric Selection */}
+              {/* Goal Type Selection */}
               <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Metric</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">User Goal Type</label>
                 <div className="flex gap-2">
                   <button
-                    onClick={() => handleMetricChange('Weight')}
+                    onClick={() => handleGoalTypeChange('loss')}
                     className={`flex-1 py-3 px-4 rounded-lg border-2 transition-all flex items-center justify-center gap-2 ${
-                      formData.metric === 'Weight'
+                      formData.goalType === 'loss'
                         ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
                         : 'border-gray-200 hover:border-gray-300 text-gray-600'
                     }`}
                   >
-                    <Scale size={18} />
-                    Weight
+                    <TrendingDown size={18} />
+                    Weight Loss
                   </button>
                   <button
-                    onClick={() => handleMetricChange('HbA1c')}
+                    onClick={() => handleGoalTypeChange('gain')}
                     className={`flex-1 py-3 px-4 rounded-lg border-2 transition-all flex items-center justify-center gap-2 ${
-                      formData.metric === 'HbA1c'
-                        ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
+                      formData.goalType === 'gain'
+                        ? 'border-blue-500 bg-blue-50 text-blue-700'
                         : 'border-gray-200 hover:border-gray-300 text-gray-600'
                     }`}
                   >
-                    <Droplets size={18} />
-                    HbA1c
+                    <TrendingUp size={18} />
+                    Weight Gain
                   </button>
                 </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  {formData.goalType === 'loss'
+                    ? 'For users trying to lose weight: decrease = positive, increase = warning'
+                    : 'For users trying to gain weight: increase = positive, decrease = warning'
+                  }
+                </p>
               </div>
 
               {/* Condition Selection */}
@@ -1988,7 +2113,7 @@ const FeedbackLogic = ({ rules, setRules, hba1cScale, setHba1cScale, showToast }
                   value={formData.condition}
                   onChange={(e) => handleConditionChange(e.target.value)}
                 >
-                  {getConditionsForMetric(formData.metric).map(cond => (
+                  {getConditionsForGoalType(formData.goalType).map(cond => (
                     <option key={cond.value} value={cond.value}>{cond.label}</option>
                   ))}
                 </select>
@@ -2134,8 +2259,6 @@ const FeedbackLogic = ({ rules, setRules, hba1cScale, setHba1cScale, showToast }
   }
 
   // Filter rules by Weight only (HbA1c uses scale now)
-  const weightRules = rules.filter(r => r.metric === 'Weight');
-
   // Main Rules List View
   return (
     <div className="space-y-6 animate-fade-in">
@@ -2147,7 +2270,7 @@ const FeedbackLogic = ({ rules, setRules, hba1cScale, setHba1cScale, showToast }
         {activeMetricTab === 'Weight' && (
           <button
             onClick={() => {
-              setFormData({ ...initialFormState, metric: 'Weight' });
+              setFormData({ ...initialFormState, metric: 'Weight', goalType: activeGoalType });
               setIsEditing(true);
             }}
             className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 shadow-sm transition-all"
@@ -2163,8 +2286,8 @@ const FeedbackLogic = ({ rules, setRules, hba1cScale, setHba1cScale, showToast }
         <div>
           <p className="text-sm text-blue-800 font-medium">How Feedback Logic Works</p>
           <p className="text-sm text-blue-700 mt-1">
-            <strong>Weight rules</strong> use relative changes (trends) or goal percentages (milestones) to motivate users.
-            <strong> HbA1c</strong> uses a universal medical scale to categorize readings and provide appropriate feedback.
+            <strong>Weight rules</strong> are separated by user goal type (Loss vs Gain). A weight decrease is positive for weight loss users but negative for weight gain users.
+            <strong> HbA1c</strong> uses a universal medical scale to categorize readings.
           </p>
         </div>
       </div>
@@ -2183,7 +2306,7 @@ const FeedbackLogic = ({ rules, setRules, hba1cScale, setHba1cScale, showToast }
             <Scale size={18} />
             Weight Rules
             <span className="ml-2 px-2 py-0.5 text-xs rounded-full bg-gray-100 text-gray-600">
-              {weightRules.length}
+              {weightLossRulesCount + weightGainRulesCount}
             </span>
           </button>
           <button
@@ -2202,28 +2325,92 @@ const FeedbackLogic = ({ rules, setRules, hba1cScale, setHba1cScale, showToast }
         {/* Content based on active tab */}
         <div className="p-6">
           {activeMetricTab === 'Weight' ? (
-            // Weight Rules List
+            // Weight Rules Section with Sub-tabs
             <>
-              {weightRules.length === 0 ? (
+              {/* Goal Type Sub-tabs */}
+              <div className="flex gap-2 mb-6">
+                <button
+                  onClick={() => setActiveGoalType('loss')}
+                  className={`flex-1 py-3 px-4 rounded-lg border-2 transition-all flex items-center justify-center gap-2 ${
+                    activeGoalType === 'loss'
+                      ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
+                      : 'border-gray-200 hover:border-gray-300 text-gray-600'
+                  }`}
+                >
+                  <TrendingDown size={18} />
+                  <span className="font-medium">Weight Loss</span>
+                  <span className={`ml-1 px-2 py-0.5 text-xs rounded-full ${
+                    activeGoalType === 'loss' ? 'bg-emerald-200 text-emerald-800' : 'bg-gray-100 text-gray-600'
+                  }`}>
+                    {weightLossRulesCount}
+                  </span>
+                </button>
+                <button
+                  onClick={() => setActiveGoalType('gain')}
+                  className={`flex-1 py-3 px-4 rounded-lg border-2 transition-all flex items-center justify-center gap-2 ${
+                    activeGoalType === 'gain'
+                      ? 'border-blue-500 bg-blue-50 text-blue-700'
+                      : 'border-gray-200 hover:border-gray-300 text-gray-600'
+                  }`}
+                >
+                  <TrendingUp size={18} />
+                  <span className="font-medium">Weight Gain</span>
+                  <span className={`ml-1 px-2 py-0.5 text-xs rounded-full ${
+                    activeGoalType === 'gain' ? 'bg-blue-200 text-blue-800' : 'bg-gray-100 text-gray-600'
+                  }`}>
+                    {weightGainRulesCount}
+                  </span>
+                </button>
+              </div>
+
+              {/* Goal Type Context Banner */}
+              <div className={`mb-4 p-3 rounded-lg text-sm flex items-center gap-2 ${
+                activeGoalType === 'loss'
+                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                  : 'bg-blue-50 text-blue-700 border border-blue-200'
+              }`}>
+                {activeGoalType === 'loss' ? (
+                  <>
+                    <TrendingDown size={16} />
+                    <span><strong>Weight Loss:</strong> Decrease = Success, Increase = Warning</span>
+                  </>
+                ) : (
+                  <>
+                    <TrendingUp size={16} />
+                    <span><strong>Weight Gain:</strong> Increase = Success, Decrease = Warning</span>
+                  </>
+                )}
+              </div>
+
+              {/* Rules List */}
+              {filteredRules.length === 0 ? (
                 <div className="text-center py-12">
-                  <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <Zap size={24} className="text-gray-400" />
+                  <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${
+                    activeGoalType === 'loss' ? 'bg-emerald-100' : 'bg-blue-100'
+                  }`}>
+                    {activeGoalType === 'loss' ? (
+                      <TrendingDown size={24} className="text-emerald-500" />
+                    ) : (
+                      <TrendingUp size={24} className="text-blue-500" />
+                    )}
                   </div>
-                  <p className="text-gray-500 font-medium">No Weight rules configured</p>
+                  <p className="text-gray-500 font-medium">No {activeGoalType === 'loss' ? 'Weight Loss' : 'Weight Gain'} rules configured</p>
                   <p className="text-sm text-gray-400 mt-1">Create your first rule to start engaging users</p>
                   <button
                     onClick={() => {
-                      setFormData({ ...initialFormState, metric: 'Weight' });
+                      setFormData({ ...initialFormState, metric: 'Weight', goalType: activeGoalType });
                       setIsEditing(true);
                     }}
-                    className="mt-4 text-emerald-600 hover:text-emerald-700 font-medium text-sm flex items-center gap-1 mx-auto"
+                    className={`mt-4 font-medium text-sm flex items-center gap-1 mx-auto ${
+                      activeGoalType === 'loss' ? 'text-emerald-600 hover:text-emerald-700' : 'text-blue-600 hover:text-blue-700'
+                    }`}
                   >
-                    <Plus size={16} /> Add Weight Rule
+                    <Plus size={16} /> Add {activeGoalType === 'loss' ? 'Weight Loss' : 'Weight Gain'} Rule
                   </button>
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {weightRules.map((rule) => {
+                  {filteredRules.map((rule) => {
                     const logicBadge = getLogicTypeBadge(rule.logicType);
                     return (
                       <div
