@@ -291,41 +291,39 @@ const MOCK_FEEDBACK_RULES = [
     type: 'success',
     isActive: true
   },
-  // HbA1c Rules - Absolute Logic (Medical Standards)
-  {
-    id: 'fr7',
-    metric: 'HbA1c',
-    logicType: 'absolute',
-    condition: 'less_than',
-    value: 5.7,
-    unit: '%',
-    message: 'Excellent! Your HbA1c is in the normal range. Keep up the healthy habits!',
-    type: 'success',
-    isActive: true
-  },
-  {
-    id: 'fr8',
-    metric: 'HbA1c',
-    logicType: 'absolute',
-    condition: 'greater_than',
-    value: 6.5,
-    unit: '%',
-    message: 'Your HbA1c is elevated. Please consult your healthcare provider.',
-    type: 'warning',
-    isActive: true
-  },
-  {
-    id: 'fr9',
-    metric: 'HbA1c',
-    logicType: 'absolute',
-    condition: 'greater_than',
-    value: 7.0,
-    unit: '%',
-    message: 'Alert: Your HbA1c indicates high blood sugar. Medical attention recommended.',
-    type: 'warning',
-    isActive: true
-  }
 ];
+
+// HbA1c Scale - Universal Medical Standards
+const DEFAULT_HBA1C_SCALE = {
+  good: {
+    min: 4.0,
+    max: 5.6,
+    label: 'Good',
+    message: 'Excellent! Your HbA1c is in the optimal range. Keep up the great work!',
+    color: 'green'
+  },
+  normal: {
+    min: 5.7,
+    max: 6.4,
+    label: 'Normal',
+    message: 'Your HbA1c is within an acceptable range. Continue maintaining healthy habits.',
+    color: 'emerald'
+  },
+  atRisk: {
+    min: 6.5,
+    max: 7.0,
+    label: 'Slight Risk',
+    message: 'Your HbA1c indicates pre-diabetic levels. Consider lifestyle adjustments and consult your doctor.',
+    color: 'amber'
+  },
+  dangerous: {
+    min: 7.1,
+    max: 15.0,
+    label: 'Dangerous',
+    message: 'Alert: Your HbA1c is in the diabetic range. Please consult your healthcare provider immediately.',
+    color: 'red'
+  }
+};
 
 // --- HELPER COMPONENTS ---
 
@@ -1770,12 +1768,13 @@ const CourseCMS = ({ courses }) => (
 );
 
 // 7. FEEDBACK LOGIC ENGINE COMPONENT
-const FeedbackLogic = ({ rules, setRules, showToast }) => {
+const FeedbackLogic = ({ rules, setRules, hba1cScale, setHba1cScale, showToast }) => {
   const [activeMetricTab, setActiveMetricTab] = useState('Weight');
   const [isEditing, setIsEditing] = useState(false);
   const [currentRule, setCurrentRule] = useState(null);
+  const [isEditingScale, setIsEditingScale] = useState(false);
 
-  // Form state for rule editor
+  // Form state for rule editor (Weight only)
   const initialFormState = {
     metric: 'Weight',
     logicType: 'relative',
@@ -1789,25 +1788,21 @@ const FeedbackLogic = ({ rules, setRules, showToast }) => {
   const [formData, setFormData] = useState(initialFormState);
   const [errors, setErrors] = useState({});
 
-  // Get conditions based on metric type
-  const getConditionsForMetric = (metric) => {
-    if (metric === 'Weight') {
-      return [
-        { value: 'decrease_by', label: 'Decreases By', logicType: 'relative', unit: 'kg' },
-        { value: 'increase_by', label: 'Increases By', logicType: 'relative', unit: 'kg' },
-        { value: 'reach_percent', label: 'Reaches % of Goal', logicType: 'milestone', unit: '%' }
-      ];
-    } else {
-      return [
-        { value: 'less_than', label: 'Is Less Than', logicType: 'absolute', unit: '%' },
-        { value: 'greater_than', label: 'Is Greater Than', logicType: 'absolute', unit: '%' }
-      ];
-    }
+  // HbA1c Scale editing state
+  const [scaleForm, setScaleForm] = useState(hba1cScale);
+
+  // Get conditions for Weight metric
+  const getConditionsForMetric = () => {
+    return [
+      { value: 'decrease_by', label: 'Decreases By', logicType: 'relative', unit: 'kg' },
+      { value: 'increase_by', label: 'Increases By', logicType: 'relative', unit: 'kg' },
+      { value: 'reach_percent', label: 'Reaches % of Goal', logicType: 'milestone', unit: '%' }
+    ];
   };
 
   // Handle condition change - update logicType and unit accordingly
   const handleConditionChange = (conditionValue) => {
-    const conditions = getConditionsForMetric(formData.metric);
+    const conditions = getConditionsForMetric();
     const selectedCondition = conditions.find(c => c.value === conditionValue);
     setFormData({
       ...formData,
@@ -1815,21 +1810,6 @@ const FeedbackLogic = ({ rules, setRules, showToast }) => {
       logicType: selectedCondition?.logicType || 'relative',
       unit: selectedCondition?.unit || 'kg'
     });
-  };
-
-  // Handle metric change - reset condition to first available
-  const handleMetricChange = (metric) => {
-    const conditions = getConditionsForMetric(metric);
-    const firstCondition = conditions[0];
-    setFormData({
-      ...formData,
-      metric,
-      condition: firstCondition.value,
-      logicType: firstCondition.logicType,
-      unit: firstCondition.unit,
-      value: metric === 'Weight' ? 1.0 : 6.5
-    });
-    setActiveMetricTab(metric);
   };
 
   // Validate form
@@ -1846,6 +1826,26 @@ const FeedbackLogic = ({ rules, setRules, showToast }) => {
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
+  };
+
+  // Validate HbA1c scale
+  const validateScale = () => {
+    // Check that ranges don't overlap and are in order
+    if (scaleForm.good.max >= scaleForm.normal.min) return false;
+    if (scaleForm.normal.max >= scaleForm.atRisk.min) return false;
+    if (scaleForm.atRisk.max >= scaleForm.dangerous.min) return false;
+    return true;
+  };
+
+  // Save HbA1c scale
+  const handleSaveScale = () => {
+    if (!validateScale()) {
+      showToast('Please ensure ranges do not overlap and are in ascending order', 'error');
+      return;
+    }
+    setHba1cScale(scaleForm);
+    setIsEditingScale(false);
+    showToast('HbA1c scale updated successfully', 'success');
   };
 
   // Save rule
@@ -2133,6 +2133,9 @@ const FeedbackLogic = ({ rules, setRules, showToast }) => {
     );
   }
 
+  // Filter rules by Weight only (HbA1c uses scale now)
+  const weightRules = rules.filter(r => r.metric === 'Weight');
+
   // Main Rules List View
   return (
     <div className="space-y-6 animate-fade-in">
@@ -2141,15 +2144,17 @@ const FeedbackLogic = ({ rules, setRules, showToast }) => {
           <h2 className="text-2xl font-bold text-gray-800">Feedback Logic</h2>
           <p className="text-sm text-gray-500 mt-1">Configure automated messages based on user health data</p>
         </div>
-        <button
-          onClick={() => {
-            setFormData({ ...initialFormState, metric: activeMetricTab });
-            setIsEditing(true);
-          }}
-          className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 shadow-sm transition-all"
-        >
-          <Plus size={18} /> Add Rule
-        </button>
+        {activeMetricTab === 'Weight' && (
+          <button
+            onClick={() => {
+              setFormData({ ...initialFormState, metric: 'Weight' });
+              setIsEditing(true);
+            }}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 shadow-sm transition-all"
+          >
+            <Plus size={18} /> Add Rule
+          </button>
+        )}
       </div>
 
       {/* Info Banner */}
@@ -2158,8 +2163,8 @@ const FeedbackLogic = ({ rules, setRules, showToast }) => {
         <div>
           <p className="text-sm text-blue-800 font-medium">How Feedback Logic Works</p>
           <p className="text-sm text-blue-700 mt-1">
-            Rules are evaluated when users log their health data. <strong>Weight rules</strong> use relative changes (trends) or goal percentages (milestones).
-            <strong> HbA1c rules</strong> use absolute medical thresholds. Triggered messages appear instantly in the user's app.
+            <strong>Weight rules</strong> use relative changes (trends) or goal percentages (milestones) to motivate users.
+            <strong> HbA1c</strong> uses a universal medical scale to categorize readings and provide appropriate feedback.
           </p>
         </div>
       </div>
@@ -2178,7 +2183,7 @@ const FeedbackLogic = ({ rules, setRules, showToast }) => {
             <Scale size={18} />
             Weight Rules
             <span className="ml-2 px-2 py-0.5 text-xs rounded-full bg-gray-100 text-gray-600">
-              {rules.filter(r => r.metric === 'Weight').length}
+              {weightRules.length}
             </span>
           </button>
           <button
@@ -2190,119 +2195,405 @@ const FeedbackLogic = ({ rules, setRules, showToast }) => {
             }`}
           >
             <Droplets size={18} />
-            HbA1c Rules
-            <span className="ml-2 px-2 py-0.5 text-xs rounded-full bg-gray-100 text-gray-600">
-              {rules.filter(r => r.metric === 'HbA1c').length}
-            </span>
+            HbA1c Scale
           </button>
         </div>
 
-        {/* Rules List */}
+        {/* Content based on active tab */}
         <div className="p-6">
-          {filteredRules.length === 0 ? (
-            <div className="text-center py-12">
-              <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Zap size={24} className="text-gray-400" />
-              </div>
-              <p className="text-gray-500 font-medium">No {activeMetricTab} rules configured</p>
-              <p className="text-sm text-gray-400 mt-1">Create your first rule to start engaging users</p>
-              <button
-                onClick={() => {
-                  setFormData({ ...initialFormState, metric: activeMetricTab });
-                  setIsEditing(true);
-                }}
-                className="mt-4 text-emerald-600 hover:text-emerald-700 font-medium text-sm flex items-center gap-1 mx-auto"
-              >
-                <Plus size={16} /> Add {activeMetricTab} Rule
-              </button>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {filteredRules.map((rule) => {
-                const logicBadge = getLogicTypeBadge(rule.logicType);
-                return (
-                  <div
-                    key={rule.id}
-                    className={`p-4 rounded-lg border transition-all ${
-                      rule.isActive
-                        ? 'bg-white border-gray-200 hover:border-gray-300'
-                        : 'bg-gray-50 border-gray-100 opacity-60'
-                    }`}
+          {activeMetricTab === 'Weight' ? (
+            // Weight Rules List
+            <>
+              {weightRules.length === 0 ? (
+                <div className="text-center py-12">
+                  <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <Zap size={24} className="text-gray-400" />
+                  </div>
+                  <p className="text-gray-500 font-medium">No Weight rules configured</p>
+                  <p className="text-sm text-gray-400 mt-1">Create your first rule to start engaging users</p>
+                  <button
+                    onClick={() => {
+                      setFormData({ ...initialFormState, metric: 'Weight' });
+                      setIsEditing(true);
+                    }}
+                    className="mt-4 text-emerald-600 hover:text-emerald-700 font-medium text-sm flex items-center gap-1 mx-auto"
                   >
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex-1">
-                        {/* Rule sentence */}
-                        <div className="flex items-center gap-2 mb-2 flex-wrap">
-                          <span className={`px-2 py-0.5 text-xs rounded-full border ${logicBadge.bg} ${logicBadge.text} ${logicBadge.border}`}>
-                            {logicBadge.label}
-                          </span>
-                          <span className={`px-2 py-0.5 text-xs rounded-full ${
-                            rule.type === 'success'
-                              ? 'bg-green-50 text-green-700 border border-green-200'
-                              : 'bg-amber-50 text-amber-700 border border-amber-200'
-                          }`}>
-                            {rule.type === 'success' ? 'Success' : 'Warning'}
-                          </span>
-                          {!rule.isActive && (
-                            <span className="px-2 py-0.5 text-xs rounded-full bg-gray-100 text-gray-500 border border-gray-200">
-                              Disabled
-                            </span>
-                          )}
+                    <Plus size={16} /> Add Weight Rule
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {weightRules.map((rule) => {
+                    const logicBadge = getLogicTypeBadge(rule.logicType);
+                    return (
+                      <div
+                        key={rule.id}
+                        className={`p-4 rounded-lg border transition-all ${
+                          rule.isActive
+                            ? 'bg-white border-gray-200 hover:border-gray-300'
+                            : 'bg-gray-50 border-gray-100 opacity-60'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex-1">
+                            {/* Rule sentence */}
+                            <div className="flex items-center gap-2 mb-2 flex-wrap">
+                              <span className={`px-2 py-0.5 text-xs rounded-full border ${logicBadge.bg} ${logicBadge.text} ${logicBadge.border}`}>
+                                {logicBadge.label}
+                              </span>
+                              <span className={`px-2 py-0.5 text-xs rounded-full ${
+                                rule.type === 'success'
+                                  ? 'bg-green-50 text-green-700 border border-green-200'
+                                  : 'bg-amber-50 text-amber-700 border border-amber-200'
+                              }`}>
+                                {rule.type === 'success' ? 'Success' : 'Warning'}
+                              </span>
+                              {!rule.isActive && (
+                                <span className="px-2 py-0.5 text-xs rounded-full bg-gray-100 text-gray-500 border border-gray-200">
+                                  Disabled
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Readable rule */}
+                            <p className="text-gray-800 font-medium mb-1">
+                              When weight {getConditionText(rule)} <span className="text-emerald-600">{rule.value}{rule.unit}</span>
+                            </p>
+
+                            {/* Message preview */}
+                            <p className="text-sm text-gray-500 line-clamp-2">
+                              "{rule.message}"
+                            </p>
+                          </div>
+
+                          {/* Actions */}
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => toggleRuleActive(rule.id)}
+                              className={`p-2 rounded-lg transition-colors ${
+                                rule.isActive
+                                  ? 'text-emerald-600 hover:bg-emerald-50'
+                                  : 'text-gray-400 hover:bg-gray-100'
+                              }`}
+                              title={rule.isActive ? 'Disable rule' : 'Enable rule'}
+                            >
+                              {rule.isActive ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
+                            </button>
+                            <button
+                              onClick={() => handleEdit(rule)}
+                              className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                            >
+                              <Edit2 size={16} />
+                            </button>
+                            <DeleteButton onDelete={() => handleDelete(rule.id)} />
+                          </div>
                         </div>
-
-                        {/* Readable rule */}
-                        <p className="text-gray-800 font-medium mb-1">
-                          When {rule.metric.toLowerCase()} {getConditionText(rule)} <span className="text-emerald-600">{rule.value}{rule.unit}</span>
-                        </p>
-
-                        {/* Message preview */}
-                        <p className="text-sm text-gray-500 line-clamp-2">
-                          "{rule.message}"
-                        </p>
                       </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          ) : (
+            // HbA1c Scale Configuration
+            <div className="space-y-6">
+              {/* Scale Visual Preview */}
+              <div className="bg-gray-50 rounded-xl p-6 border border-gray-200">
+                <h3 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                  <Droplets size={18} className="text-emerald-600" />
+                  HbA1c Classification Scale
+                </h3>
+                <p className="text-sm text-gray-600 mb-6">
+                  This universal scale determines how user HbA1c readings are categorized and what feedback they receive.
+                </p>
 
-                      {/* Actions */}
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => toggleRuleActive(rule.id)}
-                          className={`p-2 rounded-lg transition-colors ${
-                            rule.isActive
-                              ? 'text-emerald-600 hover:bg-emerald-50'
-                              : 'text-gray-400 hover:bg-gray-100'
-                          }`}
-                          title={rule.isActive ? 'Disable rule' : 'Enable rule'}
-                        >
-                          {rule.isActive ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
-                        </button>
-                        <button
-                          onClick={() => handleEdit(rule)}
-                          className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                        >
-                          <Edit2 size={16} />
-                        </button>
-                        <DeleteButton onDelete={() => handleDelete(rule.id)} />
+                {/* Visual Scale Bar */}
+                <div className="flex rounded-lg overflow-hidden mb-4 h-12">
+                  <div className="flex-1 bg-green-500 flex items-center justify-center text-white font-medium text-sm">
+                    Good
+                  </div>
+                  <div className="flex-1 bg-emerald-400 flex items-center justify-center text-white font-medium text-sm">
+                    Normal
+                  </div>
+                  <div className="flex-1 bg-amber-400 flex items-center justify-center text-white font-medium text-sm">
+                    At Risk
+                  </div>
+                  <div className="flex-1 bg-red-500 flex items-center justify-center text-white font-medium text-sm">
+                    Dangerous
+                  </div>
+                </div>
+
+                {/* Scale Values */}
+                <div className="grid grid-cols-4 gap-2 text-center text-xs text-gray-600">
+                  <div>{hba1cScale.good.min}% - {hba1cScale.good.max}%</div>
+                  <div>{hba1cScale.normal.min}% - {hba1cScale.normal.max}%</div>
+                  <div>{hba1cScale.atRisk.min}% - {hba1cScale.atRisk.max}%</div>
+                  <div>{hba1cScale.dangerous.min}%+</div>
+                </div>
+              </div>
+
+              {/* Scale Details */}
+              {isEditingScale ? (
+                // Edit Mode
+                <div className="space-y-4">
+                  {/* Good */}
+                  <div className="bg-white p-4 rounded-lg border-l-4 border-green-500">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <Check size={18} className="text-green-600" />
+                        <span className="font-medium text-gray-800">Good</span>
+                      </div>
+                      <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded">Optimal Range</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Min Value (%)</label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          className="w-full p-2 border rounded-lg text-sm"
+                          value={scaleForm.good.min}
+                          onChange={(e) => setScaleForm({...scaleForm, good: {...scaleForm.good, min: parseFloat(e.target.value)}})}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Max Value (%)</label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          className="w-full p-2 border rounded-lg text-sm"
+                          value={scaleForm.good.max}
+                          onChange={(e) => setScaleForm({...scaleForm, good: {...scaleForm.good, max: parseFloat(e.target.value)}})}
+                        />
                       </div>
                     </div>
+                    <div className="mt-3">
+                      <label className="block text-xs text-gray-500 mb-1">Message</label>
+                      <input
+                        type="text"
+                        className="w-full p-2 border rounded-lg text-sm"
+                        value={scaleForm.good.message}
+                        onChange={(e) => setScaleForm({...scaleForm, good: {...scaleForm.good, message: e.target.value}})}
+                      />
+                    </div>
                   </div>
-                );
-              })}
+
+                  {/* Normal */}
+                  <div className="bg-white p-4 rounded-lg border-l-4 border-emerald-400">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <Check size={18} className="text-emerald-500" />
+                        <span className="font-medium text-gray-800">Normal</span>
+                      </div>
+                      <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-1 rounded">Acceptable Range</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Min Value (%)</label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          className="w-full p-2 border rounded-lg text-sm"
+                          value={scaleForm.normal.min}
+                          onChange={(e) => setScaleForm({...scaleForm, normal: {...scaleForm.normal, min: parseFloat(e.target.value)}})}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Max Value (%)</label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          className="w-full p-2 border rounded-lg text-sm"
+                          value={scaleForm.normal.max}
+                          onChange={(e) => setScaleForm({...scaleForm, normal: {...scaleForm.normal, max: parseFloat(e.target.value)}})}
+                        />
+                      </div>
+                    </div>
+                    <div className="mt-3">
+                      <label className="block text-xs text-gray-500 mb-1">Message</label>
+                      <input
+                        type="text"
+                        className="w-full p-2 border rounded-lg text-sm"
+                        value={scaleForm.normal.message}
+                        onChange={(e) => setScaleForm({...scaleForm, normal: {...scaleForm.normal, message: e.target.value}})}
+                      />
+                    </div>
+                  </div>
+
+                  {/* At Risk */}
+                  <div className="bg-white p-4 rounded-lg border-l-4 border-amber-400">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle size={18} className="text-amber-500" />
+                        <span className="font-medium text-gray-800">Slight Risk</span>
+                      </div>
+                      <span className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded">Pre-diabetic Range</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Min Value (%)</label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          className="w-full p-2 border rounded-lg text-sm"
+                          value={scaleForm.atRisk.min}
+                          onChange={(e) => setScaleForm({...scaleForm, atRisk: {...scaleForm.atRisk, min: parseFloat(e.target.value)}})}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Max Value (%)</label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          className="w-full p-2 border rounded-lg text-sm"
+                          value={scaleForm.atRisk.max}
+                          onChange={(e) => setScaleForm({...scaleForm, atRisk: {...scaleForm.atRisk, max: parseFloat(e.target.value)}})}
+                        />
+                      </div>
+                    </div>
+                    <div className="mt-3">
+                      <label className="block text-xs text-gray-500 mb-1">Message</label>
+                      <input
+                        type="text"
+                        className="w-full p-2 border rounded-lg text-sm"
+                        value={scaleForm.atRisk.message}
+                        onChange={(e) => setScaleForm({...scaleForm, atRisk: {...scaleForm.atRisk, message: e.target.value}})}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Dangerous */}
+                  <div className="bg-white p-4 rounded-lg border-l-4 border-red-500">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <AlertCircle size={18} className="text-red-500" />
+                        <span className="font-medium text-gray-800">Dangerous</span>
+                      </div>
+                      <span className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded">Diabetic Range</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Min Value (%)</label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          className="w-full p-2 border rounded-lg text-sm"
+                          value={scaleForm.dangerous.min}
+                          onChange={(e) => setScaleForm({...scaleForm, dangerous: {...scaleForm.dangerous, min: parseFloat(e.target.value)}})}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Max Value</label>
+                        <div className="w-full p-2 bg-gray-100 border rounded-lg text-sm text-gray-500">No upper limit</div>
+                      </div>
+                    </div>
+                    <div className="mt-3">
+                      <label className="block text-xs text-gray-500 mb-1">Message</label>
+                      <input
+                        type="text"
+                        className="w-full p-2 border rounded-lg text-sm"
+                        value={scaleForm.dangerous.message}
+                        onChange={(e) => setScaleForm({...scaleForm, dangerous: {...scaleForm.dangerous, message: e.target.value}})}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Save/Cancel Buttons */}
+                  <div className="flex gap-3 pt-4">
+                    <button
+                      onClick={() => { setIsEditingScale(false); setScaleForm(hba1cScale); }}
+                      className="flex-1 py-3 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleSaveScale}
+                      className="flex-1 py-3 bg-emerald-600 text-white rounded-lg font-semibold hover:bg-emerald-700 transition-colors flex items-center justify-center gap-2"
+                    >
+                      <Save size={18} />
+                      Save Scale
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                // View Mode
+                <div className="space-y-3">
+                  {/* Good */}
+                  <div className="bg-white p-4 rounded-lg border border-gray-200 flex items-center gap-4">
+                    <div className="w-3 h-12 bg-green-500 rounded-full"></div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-semibold text-gray-800">Good</span>
+                        <span className="text-sm text-gray-500">({hba1cScale.good.min}% - {hba1cScale.good.max}%)</span>
+                      </div>
+                      <p className="text-sm text-gray-600">"{hba1cScale.good.message}"</p>
+                    </div>
+                  </div>
+
+                  {/* Normal */}
+                  <div className="bg-white p-4 rounded-lg border border-gray-200 flex items-center gap-4">
+                    <div className="w-3 h-12 bg-emerald-400 rounded-full"></div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-semibold text-gray-800">Normal</span>
+                        <span className="text-sm text-gray-500">({hba1cScale.normal.min}% - {hba1cScale.normal.max}%)</span>
+                      </div>
+                      <p className="text-sm text-gray-600">"{hba1cScale.normal.message}"</p>
+                    </div>
+                  </div>
+
+                  {/* At Risk */}
+                  <div className="bg-white p-4 rounded-lg border border-gray-200 flex items-center gap-4">
+                    <div className="w-3 h-12 bg-amber-400 rounded-full"></div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-semibold text-gray-800">Slight Risk</span>
+                        <span className="text-sm text-gray-500">({hba1cScale.atRisk.min}% - {hba1cScale.atRisk.max}%)</span>
+                      </div>
+                      <p className="text-sm text-gray-600">"{hba1cScale.atRisk.message}"</p>
+                    </div>
+                  </div>
+
+                  {/* Dangerous */}
+                  <div className="bg-white p-4 rounded-lg border border-gray-200 flex items-center gap-4">
+                    <div className="w-3 h-12 bg-red-500 rounded-full"></div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-semibold text-gray-800">Dangerous</span>
+                        <span className="text-sm text-gray-500">({hba1cScale.dangerous.min}%+)</span>
+                      </div>
+                      <p className="text-sm text-gray-600">"{hba1cScale.dangerous.message}"</p>
+                    </div>
+                  </div>
+
+                  {/* Edit Button */}
+                  <button
+                    onClick={() => { setScaleForm(hba1cScale); setIsEditingScale(true); }}
+                    className="w-full py-3 mt-4 border-2 border-dashed border-gray-300 text-gray-600 rounded-lg font-medium hover:border-emerald-500 hover:text-emerald-600 transition-colors flex items-center justify-center gap-2"
+                  >
+                    <Edit2 size={18} />
+                    Edit Scale Values & Messages
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
       </div>
 
-      {/* Priority Info */}
-      <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
-        <h4 className="font-medium text-gray-700 mb-2 flex items-center gap-2">
-          <Target size={16} className="text-gray-500" />
-          Rule Priority (When Multiple Rules Match)
-        </h4>
-        <ol className="text-sm text-gray-600 list-decimal list-inside space-y-1">
-          <li><strong>Medical Warnings</strong> - HbA1c threshold alerts take highest priority</li>
-          <li><strong>Milestones</strong> - Goal percentage achievements (25%, 50%, 100%)</li>
-          <li><strong>Trends</strong> - Relative weight changes (gained/lost X kg)</li>
-        </ol>
-      </div>
+      {/* Priority Info - Only show for Weight tab */}
+      {activeMetricTab === 'Weight' && (
+        <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
+          <h4 className="font-medium text-gray-700 mb-2 flex items-center gap-2">
+            <Target size={16} className="text-gray-500" />
+            Rule Priority (When Multiple Rules Match)
+          </h4>
+          <ol className="text-sm text-gray-600 list-decimal list-inside space-y-1">
+            <li><strong>Milestones</strong> - Goal percentage achievements (25%, 50%, 100%)</li>
+            <li><strong>Trends</strong> - Relative weight changes (gained/lost X kg)</li>
+          </ol>
+        </div>
+      )}
     </div>
   );
 };
@@ -2413,6 +2704,7 @@ const App = () => {
   const [news, setNews] = useState(MOCK_FEED_ITEMS);
   const [newsCategories, setNewsCategories] = useState(MOCK_NEWS_CATEGORIES);
   const [feedbackRules, setFeedbackRules] = useState(MOCK_FEEDBACK_RULES);
+  const [hba1cScale, setHba1cScale] = useState(DEFAULT_HBA1C_SCALE);
 
   // Loading states
   const [usersLoading, setUsersLoading] = useState(false);
@@ -2566,7 +2858,7 @@ const App = () => {
           {activeTab === 'recipes' && <RecipeCMS recipes={recipes} setRecipes={setRecipes} categories={recipeCategories} setCategories={setRecipeCategories} showToast={showToast} loading={recipesLoading} error={recipesError} onRefresh={fetchRecipes} />}
           {activeTab === 'courses' && <CourseCMS courses={courses} />}
           {activeTab === 'news' && <NewsCMS news={news} setNews={setNews} categories={newsCategories} setCategories={setNewsCategories} showToast={showToast} />}
-          {activeTab === 'feedback' && <FeedbackLogic rules={feedbackRules} setRules={setFeedbackRules} showToast={showToast} />}
+          {activeTab === 'feedback' && <FeedbackLogic rules={feedbackRules} setRules={setFeedbackRules} hba1cScale={hba1cScale} setHba1cScale={setHba1cScale} showToast={showToast} />}
           {activeTab === 'settings' && <SettingsPanel />}
         </div>
       </main>
