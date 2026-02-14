@@ -293,6 +293,38 @@ const MOCK_FEEDBACK_RULES = [
   },
 ];
 
+// HbA1c Scale - Universal Medical Standards
+const DEFAULT_HBA1C_SCALE = {
+  good: {
+    min: 4.0,
+    max: 5.6,
+    label: 'Good',
+    message: 'Excellent! Your HbA1c is in the optimal range. Keep up the great work!',
+    color: 'green'
+  },
+  normal: {
+    min: 5.7,
+    max: 6.4,
+    label: 'Normal',
+    message: 'Your HbA1c is within an acceptable range. Continue maintaining healthy habits.',
+    color: 'emerald'
+  },
+  atRisk: {
+    min: 6.5,
+    max: 7.0,
+    label: 'Slight Risk',
+    message: 'Your HbA1c indicates pre-diabetic levels. Consider lifestyle adjustments and consult your doctor.',
+    color: 'amber'
+  },
+  dangerous: {
+    min: 7.1,
+    max: 15.0,
+    label: 'Dangerous',
+    message: 'Alert: Your HbA1c is in the diabetic range. Please consult your healthcare provider immediately.',
+    color: 'red'
+  }
+};
+
 // --- HELPER COMPONENTS ---
 
 // Loading Spinner Component
@@ -1736,10 +1768,11 @@ const CourseCMS = ({ courses }) => (
 );
 
 // 7. FEEDBACK LOGIC ENGINE COMPONENT
-const FeedbackLogic = ({ rules, setRules, showToast }) => {
+const FeedbackLogic = ({ rules, setRules, hba1cScale, setHba1cScale, showToast }) => {
   const [activeMetricTab, setActiveMetricTab] = useState('Weight');
   const [isEditing, setIsEditing] = useState(false);
   const [currentRule, setCurrentRule] = useState(null);
+  const [isEditingScale, setIsEditingScale] = useState(false);
 
   // Form state for rule editor (Weight only)
   const initialFormState = {
@@ -1754,6 +1787,9 @@ const FeedbackLogic = ({ rules, setRules, showToast }) => {
   };
   const [formData, setFormData] = useState(initialFormState);
   const [errors, setErrors] = useState({});
+
+  // HbA1c Scale editing state
+  const [scaleForm, setScaleForm] = useState(hba1cScale);
 
   // Get conditions for Weight metric
   const getConditionsForMetric = () => {
@@ -1790,6 +1826,26 @@ const FeedbackLogic = ({ rules, setRules, showToast }) => {
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
+  };
+
+  // Validate HbA1c scale
+  const validateScale = () => {
+    // Check that ranges don't overlap and are in order
+    if (scaleForm.good.max >= scaleForm.normal.min) return false;
+    if (scaleForm.normal.max >= scaleForm.atRisk.min) return false;
+    if (scaleForm.atRisk.max >= scaleForm.dangerous.min) return false;
+    return true;
+  };
+
+  // Save HbA1c scale
+  const handleSaveScale = () => {
+    if (!validateScale()) {
+      showToast('Please ensure ranges do not overlap and are in ascending order', 'error');
+      return;
+    }
+    setHba1cScale(scaleForm);
+    setIsEditingScale(false);
+    showToast('HbA1c scale updated successfully', 'success');
   };
 
   // Save rule
@@ -2239,129 +2295,287 @@ const FeedbackLogic = ({ rules, setRules, showToast }) => {
               )}
             </>
           ) : (
-            // HbA1c Scale - Fixed Universal Standards (Read-Only)
+            // HbA1c Scale Configuration
             <div className="space-y-6">
-              {/* Info Banner */}
-              <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 flex items-start gap-3">
-                <Info size={20} className="text-purple-600 flex-shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-sm text-purple-800 font-medium">Universal Medical Standard</p>
-                  <p className="text-sm text-purple-700 mt-1">
-                    These HbA1c ranges are internationally recognized medical standards and cannot be modified.
-                    User readings are automatically categorized based on this scale.
-                  </p>
-                </div>
-              </div>
-
-              {/* Visual Scale Bar */}
-              <div className="bg-white rounded-xl p-6 border border-gray-200">
+              {/* Scale Visual Preview */}
+              <div className="bg-gray-50 rounded-xl p-6 border border-gray-200">
                 <h3 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
                   <Droplets size={18} className="text-emerald-600" />
-                  HbA1c Classification Chart
+                  HbA1c Classification Scale
                 </h3>
+                <p className="text-sm text-gray-600 mb-6">
+                  This universal scale determines how user HbA1c readings are categorized and what feedback they receive.
+                </p>
 
-                {/* Color Scale Bar */}
-                <div className="flex rounded-lg overflow-hidden mb-2 h-14 shadow-sm">
-                  <div className="flex-1 bg-gradient-to-r from-green-400 to-green-500 flex items-center justify-center text-white font-semibold text-sm">
+                {/* Visual Scale Bar */}
+                <div className="flex rounded-lg overflow-hidden mb-4 h-12">
+                  <div className="flex-1 bg-green-500 flex items-center justify-center text-white font-medium text-sm">
                     Good
                   </div>
-                  <div className="flex-1 bg-gradient-to-r from-yellow-300 to-yellow-400 flex items-center justify-center text-yellow-900 font-semibold text-sm">
+                  <div className="flex-1 bg-emerald-400 flex items-center justify-center text-white font-medium text-sm">
                     Normal
                   </div>
-                  <div className="flex-1 bg-gradient-to-r from-amber-400 to-orange-400 flex items-center justify-center text-white font-semibold text-sm">
-                    Slight Risk
+                  <div className="flex-1 bg-amber-400 flex items-center justify-center text-white font-medium text-sm">
+                    At Risk
                   </div>
-                  <div className="flex-1 bg-gradient-to-r from-red-500 to-red-600 flex items-center justify-center text-white font-semibold text-sm">
+                  <div className="flex-1 bg-red-500 flex items-center justify-center text-white font-medium text-sm">
                     Dangerous
                   </div>
                 </div>
 
-                {/* Scale Values Below Bar */}
-                <div className="grid grid-cols-4 gap-2 text-center">
-                  <div className="text-sm font-medium text-gray-700">4.0% - 5.6%</div>
-                  <div className="text-sm font-medium text-gray-700">5.7% - 6.4%</div>
-                  <div className="text-sm font-medium text-gray-700">6.5% - 7.0%</div>
-                  <div className="text-sm font-medium text-gray-700">7.1%+</div>
-                </div>
-
-                {/* Blood Sugar Equivalent */}
-                <div className="mt-4 pt-4 border-t border-gray-100">
-                  <p className="text-xs text-gray-500 text-center">Estimated Average Blood Glucose (mg/dL)</p>
-                  <div className="grid grid-cols-4 gap-2 text-center mt-1">
-                    <div className="text-xs text-gray-500">~68 - 114</div>
-                    <div className="text-xs text-gray-500">~117 - 137</div>
-                    <div className="text-xs text-gray-500">~140 - 154</div>
-                    <div className="text-xs text-gray-500">157+</div>
-                  </div>
+                {/* Scale Values */}
+                <div className="grid grid-cols-4 gap-2 text-center text-xs text-gray-600">
+                  <div>{hba1cScale.good.min}% - {hba1cScale.good.max}%</div>
+                  <div>{hba1cScale.normal.min}% - {hba1cScale.normal.max}%</div>
+                  <div>{hba1cScale.atRisk.min}% - {hba1cScale.atRisk.max}%</div>
+                  <div>{hba1cScale.dangerous.min}%+</div>
                 </div>
               </div>
 
-              {/* Detailed Categories */}
-              <div className="space-y-3">
-                {/* Good */}
-                <div className="bg-white p-5 rounded-xl border border-gray-200 hover:shadow-sm transition-shadow">
-                  <div className="flex items-start gap-4">
-                    <div className="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center flex-shrink-0">
-                      <Check size={24} className="text-green-600" />
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-1">
-                        <span className="font-bold text-gray-800 text-lg">Good</span>
-                        <span className="px-3 py-1 bg-green-100 text-green-700 text-sm font-medium rounded-full">4.0% - 5.6%</span>
+              {/* Scale Details */}
+              {isEditingScale ? (
+                // Edit Mode
+                <div className="space-y-4">
+                  {/* Good */}
+                  <div className="bg-white p-4 rounded-lg border-l-4 border-green-500">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <Check size={18} className="text-green-600" />
+                        <span className="font-medium text-gray-800">Good</span>
                       </div>
-                      <p className="text-gray-600 text-sm">Optimal range indicating healthy blood sugar control. Keep maintaining your healthy lifestyle!</p>
+                      <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded">Optimal Range</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Min Value (%)</label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          className="w-full p-2 border rounded-lg text-sm"
+                          value={scaleForm.good.min}
+                          onChange={(e) => setScaleForm({...scaleForm, good: {...scaleForm.good, min: parseFloat(e.target.value)}})}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Max Value (%)</label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          className="w-full p-2 border rounded-lg text-sm"
+                          value={scaleForm.good.max}
+                          onChange={(e) => setScaleForm({...scaleForm, good: {...scaleForm.good, max: parseFloat(e.target.value)}})}
+                        />
+                      </div>
+                    </div>
+                    <div className="mt-3">
+                      <label className="block text-xs text-gray-500 mb-1">Message</label>
+                      <input
+                        type="text"
+                        className="w-full p-2 border rounded-lg text-sm"
+                        value={scaleForm.good.message}
+                        onChange={(e) => setScaleForm({...scaleForm, good: {...scaleForm.good, message: e.target.value}})}
+                      />
                     </div>
                   </div>
-                </div>
 
-                {/* Normal */}
-                <div className="bg-white p-5 rounded-xl border border-gray-200 hover:shadow-sm transition-shadow">
-                  <div className="flex items-start gap-4">
-                    <div className="w-12 h-12 bg-yellow-100 rounded-xl flex items-center justify-center flex-shrink-0">
-                      <Check size={24} className="text-yellow-600" />
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-1">
-                        <span className="font-bold text-gray-800 text-lg">Normal</span>
-                        <span className="px-3 py-1 bg-yellow-100 text-yellow-700 text-sm font-medium rounded-full">5.7% - 6.4%</span>
+                  {/* Normal */}
+                  <div className="bg-white p-4 rounded-lg border-l-4 border-emerald-400">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <Check size={18} className="text-emerald-500" />
+                        <span className="font-medium text-gray-800">Normal</span>
                       </div>
-                      <p className="text-gray-600 text-sm">Within acceptable range. Continue monitoring and maintaining healthy habits to stay in this zone.</p>
+                      <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-1 rounded">Acceptable Range</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Min Value (%)</label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          className="w-full p-2 border rounded-lg text-sm"
+                          value={scaleForm.normal.min}
+                          onChange={(e) => setScaleForm({...scaleForm, normal: {...scaleForm.normal, min: parseFloat(e.target.value)}})}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Max Value (%)</label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          className="w-full p-2 border rounded-lg text-sm"
+                          value={scaleForm.normal.max}
+                          onChange={(e) => setScaleForm({...scaleForm, normal: {...scaleForm.normal, max: parseFloat(e.target.value)}})}
+                        />
+                      </div>
+                    </div>
+                    <div className="mt-3">
+                      <label className="block text-xs text-gray-500 mb-1">Message</label>
+                      <input
+                        type="text"
+                        className="w-full p-2 border rounded-lg text-sm"
+                        value={scaleForm.normal.message}
+                        onChange={(e) => setScaleForm({...scaleForm, normal: {...scaleForm.normal, message: e.target.value}})}
+                      />
                     </div>
                   </div>
-                </div>
 
-                {/* Slight Risk */}
-                <div className="bg-white p-5 rounded-xl border border-gray-200 hover:shadow-sm transition-shadow">
-                  <div className="flex items-start gap-4">
-                    <div className="w-12 h-12 bg-amber-100 rounded-xl flex items-center justify-center flex-shrink-0">
-                      <AlertTriangle size={24} className="text-amber-600" />
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-1">
-                        <span className="font-bold text-gray-800 text-lg">Slight Risk</span>
-                        <span className="px-3 py-1 bg-amber-100 text-amber-700 text-sm font-medium rounded-full">6.5% - 7.0%</span>
+                  {/* At Risk */}
+                  <div className="bg-white p-4 rounded-lg border-l-4 border-amber-400">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle size={18} className="text-amber-500" />
+                        <span className="font-medium text-gray-800">Slight Risk</span>
                       </div>
-                      <p className="text-gray-600 text-sm">Pre-diabetic range. Consider lifestyle adjustments and consult with your healthcare provider.</p>
+                      <span className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded">Pre-diabetic Range</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Min Value (%)</label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          className="w-full p-2 border rounded-lg text-sm"
+                          value={scaleForm.atRisk.min}
+                          onChange={(e) => setScaleForm({...scaleForm, atRisk: {...scaleForm.atRisk, min: parseFloat(e.target.value)}})}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Max Value (%)</label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          className="w-full p-2 border rounded-lg text-sm"
+                          value={scaleForm.atRisk.max}
+                          onChange={(e) => setScaleForm({...scaleForm, atRisk: {...scaleForm.atRisk, max: parseFloat(e.target.value)}})}
+                        />
+                      </div>
+                    </div>
+                    <div className="mt-3">
+                      <label className="block text-xs text-gray-500 mb-1">Message</label>
+                      <input
+                        type="text"
+                        className="w-full p-2 border rounded-lg text-sm"
+                        value={scaleForm.atRisk.message}
+                        onChange={(e) => setScaleForm({...scaleForm, atRisk: {...scaleForm.atRisk, message: e.target.value}})}
+                      />
                     </div>
                   </div>
-                </div>
 
-                {/* Dangerous */}
-                <div className="bg-white p-5 rounded-xl border border-gray-200 hover:shadow-sm transition-shadow">
-                  <div className="flex items-start gap-4">
-                    <div className="w-12 h-12 bg-red-100 rounded-xl flex items-center justify-center flex-shrink-0">
-                      <AlertCircle size={24} className="text-red-600" />
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-1">
-                        <span className="font-bold text-gray-800 text-lg">Dangerous</span>
-                        <span className="px-3 py-1 bg-red-100 text-red-700 text-sm font-medium rounded-full">7.1%+</span>
+                  {/* Dangerous */}
+                  <div className="bg-white p-4 rounded-lg border-l-4 border-red-500">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <AlertCircle size={18} className="text-red-500" />
+                        <span className="font-medium text-gray-800">Dangerous</span>
                       </div>
-                      <p className="text-gray-600 text-sm">Diabetic range requiring medical attention. Please consult your healthcare provider immediately.</p>
+                      <span className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded">Diabetic Range</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Min Value (%)</label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          className="w-full p-2 border rounded-lg text-sm"
+                          value={scaleForm.dangerous.min}
+                          onChange={(e) => setScaleForm({...scaleForm, dangerous: {...scaleForm.dangerous, min: parseFloat(e.target.value)}})}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Max Value</label>
+                        <div className="w-full p-2 bg-gray-100 border rounded-lg text-sm text-gray-500">No upper limit</div>
+                      </div>
+                    </div>
+                    <div className="mt-3">
+                      <label className="block text-xs text-gray-500 mb-1">Message</label>
+                      <input
+                        type="text"
+                        className="w-full p-2 border rounded-lg text-sm"
+                        value={scaleForm.dangerous.message}
+                        onChange={(e) => setScaleForm({...scaleForm, dangerous: {...scaleForm.dangerous, message: e.target.value}})}
+                      />
                     </div>
                   </div>
+
+                  {/* Save/Cancel Buttons */}
+                  <div className="flex gap-3 pt-4">
+                    <button
+                      onClick={() => { setIsEditingScale(false); setScaleForm(hba1cScale); }}
+                      className="flex-1 py-3 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleSaveScale}
+                      className="flex-1 py-3 bg-emerald-600 text-white rounded-lg font-semibold hover:bg-emerald-700 transition-colors flex items-center justify-center gap-2"
+                    >
+                      <Save size={18} />
+                      Save Scale
+                    </button>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                // View Mode
+                <div className="space-y-3">
+                  {/* Good */}
+                  <div className="bg-white p-4 rounded-lg border border-gray-200 flex items-center gap-4">
+                    <div className="w-3 h-12 bg-green-500 rounded-full"></div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-semibold text-gray-800">Good</span>
+                        <span className="text-sm text-gray-500">({hba1cScale.good.min}% - {hba1cScale.good.max}%)</span>
+                      </div>
+                      <p className="text-sm text-gray-600">"{hba1cScale.good.message}"</p>
+                    </div>
+                  </div>
+
+                  {/* Normal */}
+                  <div className="bg-white p-4 rounded-lg border border-gray-200 flex items-center gap-4">
+                    <div className="w-3 h-12 bg-emerald-400 rounded-full"></div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-semibold text-gray-800">Normal</span>
+                        <span className="text-sm text-gray-500">({hba1cScale.normal.min}% - {hba1cScale.normal.max}%)</span>
+                      </div>
+                      <p className="text-sm text-gray-600">"{hba1cScale.normal.message}"</p>
+                    </div>
+                  </div>
+
+                  {/* At Risk */}
+                  <div className="bg-white p-4 rounded-lg border border-gray-200 flex items-center gap-4">
+                    <div className="w-3 h-12 bg-amber-400 rounded-full"></div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-semibold text-gray-800">Slight Risk</span>
+                        <span className="text-sm text-gray-500">({hba1cScale.atRisk.min}% - {hba1cScale.atRisk.max}%)</span>
+                      </div>
+                      <p className="text-sm text-gray-600">"{hba1cScale.atRisk.message}"</p>
+                    </div>
+                  </div>
+
+                  {/* Dangerous */}
+                  <div className="bg-white p-4 rounded-lg border border-gray-200 flex items-center gap-4">
+                    <div className="w-3 h-12 bg-red-500 rounded-full"></div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-semibold text-gray-800">Dangerous</span>
+                        <span className="text-sm text-gray-500">({hba1cScale.dangerous.min}%+)</span>
+                      </div>
+                      <p className="text-sm text-gray-600">"{hba1cScale.dangerous.message}"</p>
+                    </div>
+                  </div>
+
+                  {/* Edit Button */}
+                  <button
+                    onClick={() => { setScaleForm(hba1cScale); setIsEditingScale(true); }}
+                    className="w-full py-3 mt-4 border-2 border-dashed border-gray-300 text-gray-600 rounded-lg font-medium hover:border-emerald-500 hover:text-emerald-600 transition-colors flex items-center justify-center gap-2"
+                  >
+                    <Edit2 size={18} />
+                    Edit Scale Values & Messages
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -2490,6 +2704,7 @@ const App = () => {
   const [news, setNews] = useState(MOCK_FEED_ITEMS);
   const [newsCategories, setNewsCategories] = useState(MOCK_NEWS_CATEGORIES);
   const [feedbackRules, setFeedbackRules] = useState(MOCK_FEEDBACK_RULES);
+  const [hba1cScale, setHba1cScale] = useState(DEFAULT_HBA1C_SCALE);
 
   // Loading states
   const [usersLoading, setUsersLoading] = useState(false);
@@ -2643,7 +2858,7 @@ const App = () => {
           {activeTab === 'recipes' && <RecipeCMS recipes={recipes} setRecipes={setRecipes} categories={recipeCategories} setCategories={setRecipeCategories} showToast={showToast} loading={recipesLoading} error={recipesError} onRefresh={fetchRecipes} />}
           {activeTab === 'courses' && <CourseCMS courses={courses} />}
           {activeTab === 'news' && <NewsCMS news={news} setNews={setNews} categories={newsCategories} setCategories={setNewsCategories} showToast={showToast} />}
-          {activeTab === 'feedback' && <FeedbackLogic rules={feedbackRules} setRules={setFeedbackRules} showToast={showToast} />}
+          {activeTab === 'feedback' && <FeedbackLogic rules={feedbackRules} setRules={setFeedbackRules} hba1cScale={hba1cScale} setHba1cScale={setHba1cScale} showToast={showToast} />}
           {activeTab === 'settings' && <SettingsPanel />}
         </div>
       </main>
