@@ -39,7 +39,15 @@ import {
   Lock,
   Ban,
   Loader2,
-  RefreshCw
+  RefreshCw,
+  Zap,
+  Scale,
+  Droplets,
+  Target,
+  ToggleLeft,
+  ToggleRight,
+  Info,
+  MessageSquare
 } from 'lucide-react';
 import { adminUsersService, adminRecipesService, transformFromApiFormat } from './services';
 
@@ -210,6 +218,112 @@ const MOCK_FEED_ITEMS = [
     author: 'Medical News Team',
     publishDate: '2026-01-15',
     image: 'https://images.unsplash.com/photo-1541781777621-3914296d36e3?auto=format&fit=crop&q=80&w=300&h=200'
+  }
+];
+
+// Feedback Rules - Progress Logic Engine
+const MOCK_FEEDBACK_RULES = [
+  // Weight Rules - Relative Logic (Trends)
+  {
+    id: 'fr1',
+    metric: 'Weight',
+    logicType: 'relative',
+    condition: 'decrease_by',
+    value: 0.5,
+    unit: 'kg',
+    message: 'Nice progress! Every small step counts toward your goal.',
+    type: 'success',
+    isActive: true
+  },
+  {
+    id: 'fr2',
+    metric: 'Weight',
+    logicType: 'relative',
+    condition: 'decrease_by',
+    value: 1.0,
+    unit: 'kg',
+    message: 'Great work! You have lost 1kg this week. Keep it up!',
+    type: 'success',
+    isActive: true
+  },
+  {
+    id: 'fr3',
+    metric: 'Weight',
+    logicType: 'relative',
+    condition: 'increase_by',
+    value: 1.0,
+    unit: 'kg',
+    message: 'Your weight has increased slightly. Stay focused on your meals and movement.',
+    type: 'warning',
+    isActive: true
+  },
+  // Weight Rules - Milestone Logic (Goal-Based)
+  {
+    id: 'fr4',
+    metric: 'Weight',
+    logicType: 'milestone',
+    condition: 'reach_percent',
+    value: 25,
+    unit: '%',
+    message: 'Amazing! You are 25% of the way to your target weight!',
+    type: 'success',
+    isActive: true
+  },
+  {
+    id: 'fr5',
+    metric: 'Weight',
+    logicType: 'milestone',
+    condition: 'reach_percent',
+    value: 50,
+    unit: '%',
+    message: 'Halfway there! You have reached 50% of your weight loss goal!',
+    type: 'success',
+    isActive: true
+  },
+  {
+    id: 'fr6',
+    metric: 'Weight',
+    logicType: 'milestone',
+    condition: 'reach_percent',
+    value: 100,
+    unit: '%',
+    message: 'Congratulations! You have reached your target weight! Time to maintain.',
+    type: 'success',
+    isActive: true
+  },
+  // HbA1c Rules - Absolute Logic (Medical Standards)
+  {
+    id: 'fr7',
+    metric: 'HbA1c',
+    logicType: 'absolute',
+    condition: 'less_than',
+    value: 5.7,
+    unit: '%',
+    message: 'Excellent! Your HbA1c is in the normal range. Keep up the healthy habits!',
+    type: 'success',
+    isActive: true
+  },
+  {
+    id: 'fr8',
+    metric: 'HbA1c',
+    logicType: 'absolute',
+    condition: 'greater_than',
+    value: 6.5,
+    unit: '%',
+    message: 'Your HbA1c is elevated. Please consult your healthcare provider.',
+    type: 'warning',
+    isActive: true
+  },
+  {
+    id: 'fr9',
+    metric: 'HbA1c',
+    logicType: 'absolute',
+    condition: 'greater_than',
+    value: 7.0,
+    unit: '%',
+    message: 'Alert: Your HbA1c indicates high blood sugar. Medical attention recommended.',
+    type: 'warning',
+    isActive: true
   }
 ];
 
@@ -1655,6 +1769,544 @@ const CourseCMS = ({ courses }) => (
   </div>
 );
 
+// 7. FEEDBACK LOGIC ENGINE COMPONENT
+const FeedbackLogic = ({ rules, setRules, showToast }) => {
+  const [activeMetricTab, setActiveMetricTab] = useState('Weight');
+  const [isEditing, setIsEditing] = useState(false);
+  const [currentRule, setCurrentRule] = useState(null);
+
+  // Form state for rule editor
+  const initialFormState = {
+    metric: 'Weight',
+    logicType: 'relative',
+    condition: 'decrease_by',
+    value: 1.0,
+    unit: 'kg',
+    message: '',
+    type: 'success',
+    isActive: true
+  };
+  const [formData, setFormData] = useState(initialFormState);
+  const [errors, setErrors] = useState({});
+
+  // Get conditions based on metric type
+  const getConditionsForMetric = (metric) => {
+    if (metric === 'Weight') {
+      return [
+        { value: 'decrease_by', label: 'Decreases By', logicType: 'relative', unit: 'kg' },
+        { value: 'increase_by', label: 'Increases By', logicType: 'relative', unit: 'kg' },
+        { value: 'reach_percent', label: 'Reaches % of Goal', logicType: 'milestone', unit: '%' }
+      ];
+    } else {
+      return [
+        { value: 'less_than', label: 'Is Less Than', logicType: 'absolute', unit: '%' },
+        { value: 'greater_than', label: 'Is Greater Than', logicType: 'absolute', unit: '%' }
+      ];
+    }
+  };
+
+  // Handle condition change - update logicType and unit accordingly
+  const handleConditionChange = (conditionValue) => {
+    const conditions = getConditionsForMetric(formData.metric);
+    const selectedCondition = conditions.find(c => c.value === conditionValue);
+    setFormData({
+      ...formData,
+      condition: conditionValue,
+      logicType: selectedCondition?.logicType || 'relative',
+      unit: selectedCondition?.unit || 'kg'
+    });
+  };
+
+  // Handle metric change - reset condition to first available
+  const handleMetricChange = (metric) => {
+    const conditions = getConditionsForMetric(metric);
+    const firstCondition = conditions[0];
+    setFormData({
+      ...formData,
+      metric,
+      condition: firstCondition.value,
+      logicType: firstCondition.logicType,
+      unit: firstCondition.unit,
+      value: metric === 'Weight' ? 1.0 : 6.5
+    });
+    setActiveMetricTab(metric);
+  };
+
+  // Validate form
+  const validateForm = () => {
+    const newErrors = {};
+    if (!formData.value || formData.value <= 0) {
+      newErrors.value = 'Value must be greater than 0';
+    }
+    if (!formData.message.trim()) {
+      newErrors.message = 'Message is required';
+    }
+    if (formData.message.length > 140) {
+      newErrors.message = 'Message must be 140 characters or less';
+    }
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  // Save rule
+  const handleSave = () => {
+    if (!validateForm()) return;
+
+    if (currentRule) {
+      // Edit existing rule
+      setRules(rules.map(r => r.id === currentRule.id ? { ...formData, id: currentRule.id } : r));
+      showToast('Rule updated successfully', 'success');
+    } else {
+      // Add new rule
+      const newRule = {
+        ...formData,
+        id: `fr${Date.now()}`
+      };
+      setRules([...rules, newRule]);
+      showToast('Rule created successfully', 'success');
+    }
+    setIsEditing(false);
+    setCurrentRule(null);
+    setFormData(initialFormState);
+  };
+
+  // Edit rule
+  const handleEdit = (rule) => {
+    setCurrentRule(rule);
+    setFormData(rule);
+    setIsEditing(true);
+  };
+
+  // Delete rule
+  const handleDelete = (ruleId) => {
+    setRules(rules.filter(r => r.id !== ruleId));
+    showToast('Rule deleted', 'success');
+  };
+
+  // Toggle rule active state
+  const toggleRuleActive = (ruleId) => {
+    setRules(rules.map(r => r.id === ruleId ? { ...r, isActive: !r.isActive } : r));
+  };
+
+  // Filter rules by metric
+  const filteredRules = rules.filter(r => r.metric === activeMetricTab);
+
+  // Get readable condition text
+  const getConditionText = (rule) => {
+    const conditionLabels = {
+      decrease_by: 'decreases by',
+      increase_by: 'increases by',
+      reach_percent: 'reaches',
+      less_than: 'is less than',
+      greater_than: 'is greater than'
+    };
+    return conditionLabels[rule.condition] || rule.condition;
+  };
+
+  // Get logic type badge
+  const getLogicTypeBadge = (logicType) => {
+    const badges = {
+      relative: { label: 'Trend', bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' },
+      absolute: { label: 'Threshold', bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200' },
+      milestone: { label: 'Milestone', bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200' }
+    };
+    return badges[logicType] || badges.relative;
+  };
+
+  // Rule Editor Modal/Panel
+  if (isEditing) {
+    return (
+      <div className="space-y-6 animate-fade-in">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => { setIsEditing(false); setCurrentRule(null); setFormData(initialFormState); setErrors({}); }}
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <X size={20} className="text-gray-500" />
+            </button>
+            <h2 className="text-2xl font-bold text-gray-800">
+              {currentRule ? 'Edit Rule' : 'Create New Rule'}
+            </h2>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Rule Builder */}
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 space-y-6">
+            <div>
+              <h3 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                <MessageSquare size={18} className="text-emerald-600" />
+                Rule Builder
+              </h3>
+
+              {/* Sentence Preview */}
+              <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 mb-6">
+                <p className="text-sm text-gray-500 mb-1">Rule Preview:</p>
+                <p className="text-gray-800 font-medium">
+                  WHEN <span className="text-emerald-600">{formData.metric}</span>{' '}
+                  <span className="text-blue-600">{getConditionText(formData)}</span>{' '}
+                  <span className="text-purple-600">{formData.value}{formData.unit}</span>{' '}
+                  THEN show <span className={formData.type === 'success' ? 'text-green-600' : 'text-amber-600'}>{formData.type}</span> message
+                </p>
+              </div>
+
+              {/* Metric Selection */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Metric</label>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleMetricChange('Weight')}
+                    className={`flex-1 py-3 px-4 rounded-lg border-2 transition-all flex items-center justify-center gap-2 ${
+                      formData.metric === 'Weight'
+                        ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
+                        : 'border-gray-200 hover:border-gray-300 text-gray-600'
+                    }`}
+                  >
+                    <Scale size={18} />
+                    Weight
+                  </button>
+                  <button
+                    onClick={() => handleMetricChange('HbA1c')}
+                    className={`flex-1 py-3 px-4 rounded-lg border-2 transition-all flex items-center justify-center gap-2 ${
+                      formData.metric === 'HbA1c'
+                        ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
+                        : 'border-gray-200 hover:border-gray-300 text-gray-600'
+                    }`}
+                  >
+                    <Droplets size={18} />
+                    HbA1c
+                  </button>
+                </div>
+              </div>
+
+              {/* Condition Selection */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Condition</label>
+                <select
+                  className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                  value={formData.condition}
+                  onChange={(e) => handleConditionChange(e.target.value)}
+                >
+                  {getConditionsForMetric(formData.metric).map(cond => (
+                    <option key={cond.value} value={cond.value}>{cond.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Value Input */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Value</label>
+                <div className="flex">
+                  <input
+                    type="number"
+                    step={formData.metric === 'Weight' ? '0.1' : '0.1'}
+                    min="0"
+                    className={`flex-1 p-3 border rounded-l-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 ${
+                      errors.value ? 'border-red-500' : ''
+                    }`}
+                    value={formData.value}
+                    onChange={(e) => setFormData({ ...formData, value: parseFloat(e.target.value) || 0 })}
+                  />
+                  <span className="px-4 py-3 bg-gray-100 border border-l-0 rounded-r-lg text-gray-600 font-medium">
+                    {formData.unit}
+                  </span>
+                </div>
+                {errors.value && <p className="text-red-500 text-xs mt-1">{errors.value}</p>}
+              </div>
+
+              {/* Message Type */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Feedback Type</label>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setFormData({ ...formData, type: 'success' })}
+                    className={`flex-1 py-3 px-4 rounded-lg border-2 transition-all flex items-center justify-center gap-2 ${
+                      formData.type === 'success'
+                        ? 'border-green-500 bg-green-50 text-green-700'
+                        : 'border-gray-200 hover:border-gray-300 text-gray-600'
+                    }`}
+                  >
+                    <Check size={18} />
+                    Success
+                  </button>
+                  <button
+                    onClick={() => setFormData({ ...formData, type: 'warning' })}
+                    className={`flex-1 py-3 px-4 rounded-lg border-2 transition-all flex items-center justify-center gap-2 ${
+                      formData.type === 'warning'
+                        ? 'border-amber-500 bg-amber-50 text-amber-700'
+                        : 'border-gray-200 hover:border-gray-300 text-gray-600'
+                    }`}
+                  >
+                    <AlertTriangle size={18} />
+                    Warning
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Message Editor */}
+          <div className="space-y-6">
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+              <h3 className="font-semibold text-gray-800 mb-4">Feedback Message</h3>
+              <textarea
+                className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 resize-none ${
+                  errors.message ? 'border-red-500' : ''
+                }`}
+                rows={4}
+                maxLength={140}
+                placeholder="Enter the message users will see when this rule triggers..."
+                value={formData.message}
+                onChange={(e) => setFormData({ ...formData, message: e.target.value })}
+              />
+              <div className="flex justify-between items-center mt-2">
+                {errors.message ? (
+                  <p className="text-red-500 text-xs">{errors.message}</p>
+                ) : (
+                  <p className="text-xs text-gray-400">Write a motivating or informative message</p>
+                )}
+                <span className={`text-xs ${formData.message.length > 120 ? 'text-amber-600' : 'text-gray-400'}`}>
+                  {formData.message.length}/140
+                </span>
+              </div>
+            </div>
+
+            {/* Preview Card */}
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+              <h3 className="font-semibold text-gray-800 mb-4">User Preview</h3>
+              <div className={`p-4 rounded-lg border-l-4 ${
+                formData.type === 'success'
+                  ? 'bg-green-50 border-green-500'
+                  : 'bg-amber-50 border-amber-500'
+              }`}>
+                <div className="flex items-start gap-3">
+                  {formData.type === 'success' ? (
+                    <div className="p-2 bg-green-100 rounded-full">
+                      <Check size={16} className="text-green-600" />
+                    </div>
+                  ) : (
+                    <div className="p-2 bg-amber-100 rounded-full">
+                      <AlertTriangle size={16} className="text-amber-600" />
+                    </div>
+                  )}
+                  <div>
+                    <p className={`font-medium ${formData.type === 'success' ? 'text-green-800' : 'text-amber-800'}`}>
+                      {formData.type === 'success' ? 'Great Progress!' : 'Attention Needed'}
+                    </p>
+                    <p className={`text-sm mt-1 ${formData.type === 'success' ? 'text-green-700' : 'text-amber-700'}`}>
+                      {formData.message || 'Your message will appear here...'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Active Toggle & Save */}
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <p className="font-medium text-gray-800">Rule Status</p>
+                  <p className="text-sm text-gray-500">Enable or disable this rule</p>
+                </div>
+                <button
+                  onClick={() => setFormData({ ...formData, isActive: !formData.isActive })}
+                  className={`p-2 rounded-lg transition-colors ${
+                    formData.isActive ? 'text-emerald-600' : 'text-gray-400'
+                  }`}
+                >
+                  {formData.isActive ? <ToggleRight size={32} /> : <ToggleLeft size={32} />}
+                </button>
+              </div>
+
+              <button
+                onClick={handleSave}
+                className="w-full py-3 bg-emerald-600 text-white rounded-lg font-semibold hover:bg-emerald-700 transition-colors flex items-center justify-center gap-2"
+              >
+                <Save size={18} />
+                {currentRule ? 'Update Rule' : 'Create Rule'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Main Rules List View
+  return (
+    <div className="space-y-6 animate-fade-in">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-800">Feedback Logic</h2>
+          <p className="text-sm text-gray-500 mt-1">Configure automated messages based on user health data</p>
+        </div>
+        <button
+          onClick={() => {
+            setFormData({ ...initialFormState, metric: activeMetricTab });
+            setIsEditing(true);
+          }}
+          className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 shadow-sm transition-all"
+        >
+          <Plus size={18} /> Add Rule
+        </button>
+      </div>
+
+      {/* Info Banner */}
+      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-start gap-3">
+        <Info size={20} className="text-blue-600 flex-shrink-0 mt-0.5" />
+        <div>
+          <p className="text-sm text-blue-800 font-medium">How Feedback Logic Works</p>
+          <p className="text-sm text-blue-700 mt-1">
+            Rules are evaluated when users log their health data. <strong>Weight rules</strong> use relative changes (trends) or goal percentages (milestones).
+            <strong> HbA1c rules</strong> use absolute medical thresholds. Triggered messages appear instantly in the user's app.
+          </p>
+        </div>
+      </div>
+
+      {/* Metric Tabs */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+        <div className="flex border-b border-gray-200">
+          <button
+            onClick={() => setActiveMetricTab('Weight')}
+            className={`flex-1 py-4 px-6 font-medium transition-colors flex items-center justify-center gap-2 ${
+              activeMetricTab === 'Weight'
+                ? 'text-emerald-600 border-b-2 border-emerald-600 bg-emerald-50'
+                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            <Scale size={18} />
+            Weight Rules
+            <span className="ml-2 px-2 py-0.5 text-xs rounded-full bg-gray-100 text-gray-600">
+              {rules.filter(r => r.metric === 'Weight').length}
+            </span>
+          </button>
+          <button
+            onClick={() => setActiveMetricTab('HbA1c')}
+            className={`flex-1 py-4 px-6 font-medium transition-colors flex items-center justify-center gap-2 ${
+              activeMetricTab === 'HbA1c'
+                ? 'text-emerald-600 border-b-2 border-emerald-600 bg-emerald-50'
+                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            <Droplets size={18} />
+            HbA1c Rules
+            <span className="ml-2 px-2 py-0.5 text-xs rounded-full bg-gray-100 text-gray-600">
+              {rules.filter(r => r.metric === 'HbA1c').length}
+            </span>
+          </button>
+        </div>
+
+        {/* Rules List */}
+        <div className="p-6">
+          {filteredRules.length === 0 ? (
+            <div className="text-center py-12">
+              <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Zap size={24} className="text-gray-400" />
+              </div>
+              <p className="text-gray-500 font-medium">No {activeMetricTab} rules configured</p>
+              <p className="text-sm text-gray-400 mt-1">Create your first rule to start engaging users</p>
+              <button
+                onClick={() => {
+                  setFormData({ ...initialFormState, metric: activeMetricTab });
+                  setIsEditing(true);
+                }}
+                className="mt-4 text-emerald-600 hover:text-emerald-700 font-medium text-sm flex items-center gap-1 mx-auto"
+              >
+                <Plus size={16} /> Add {activeMetricTab} Rule
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filteredRules.map((rule) => {
+                const logicBadge = getLogicTypeBadge(rule.logicType);
+                return (
+                  <div
+                    key={rule.id}
+                    className={`p-4 rounded-lg border transition-all ${
+                      rule.isActive
+                        ? 'bg-white border-gray-200 hover:border-gray-300'
+                        : 'bg-gray-50 border-gray-100 opacity-60'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1">
+                        {/* Rule sentence */}
+                        <div className="flex items-center gap-2 mb-2 flex-wrap">
+                          <span className={`px-2 py-0.5 text-xs rounded-full border ${logicBadge.bg} ${logicBadge.text} ${logicBadge.border}`}>
+                            {logicBadge.label}
+                          </span>
+                          <span className={`px-2 py-0.5 text-xs rounded-full ${
+                            rule.type === 'success'
+                              ? 'bg-green-50 text-green-700 border border-green-200'
+                              : 'bg-amber-50 text-amber-700 border border-amber-200'
+                          }`}>
+                            {rule.type === 'success' ? 'Success' : 'Warning'}
+                          </span>
+                          {!rule.isActive && (
+                            <span className="px-2 py-0.5 text-xs rounded-full bg-gray-100 text-gray-500 border border-gray-200">
+                              Disabled
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Readable rule */}
+                        <p className="text-gray-800 font-medium mb-1">
+                          When {rule.metric.toLowerCase()} {getConditionText(rule)} <span className="text-emerald-600">{rule.value}{rule.unit}</span>
+                        </p>
+
+                        {/* Message preview */}
+                        <p className="text-sm text-gray-500 line-clamp-2">
+                          "{rule.message}"
+                        </p>
+                      </div>
+
+                      {/* Actions */}
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => toggleRuleActive(rule.id)}
+                          className={`p-2 rounded-lg transition-colors ${
+                            rule.isActive
+                              ? 'text-emerald-600 hover:bg-emerald-50'
+                              : 'text-gray-400 hover:bg-gray-100'
+                          }`}
+                          title={rule.isActive ? 'Disable rule' : 'Enable rule'}
+                        >
+                          {rule.isActive ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
+                        </button>
+                        <button
+                          onClick={() => handleEdit(rule)}
+                          className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                        >
+                          <Edit2 size={16} />
+                        </button>
+                        <DeleteButton onDelete={() => handleDelete(rule.id)} />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Priority Info */}
+      <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
+        <h4 className="font-medium text-gray-700 mb-2 flex items-center gap-2">
+          <Target size={16} className="text-gray-500" />
+          Rule Priority (When Multiple Rules Match)
+        </h4>
+        <ol className="text-sm text-gray-600 list-decimal list-inside space-y-1">
+          <li><strong>Medical Warnings</strong> - HbA1c threshold alerts take highest priority</li>
+          <li><strong>Milestones</strong> - Goal percentage achievements (25%, 50%, 100%)</li>
+          <li><strong>Trends</strong> - Relative weight changes (gained/lost X kg)</li>
+        </ol>
+      </div>
+    </div>
+  );
+};
+
 // 6. SETTINGS COMPONENT
 const SettingsPanel = () => {
   return (
@@ -1760,6 +2412,7 @@ const App = () => {
   const [courses, setCourses] = useState(MOCK_COURSES);
   const [news, setNews] = useState(MOCK_FEED_ITEMS);
   const [newsCategories, setNewsCategories] = useState(MOCK_NEWS_CATEGORIES);
+  const [feedbackRules, setFeedbackRules] = useState(MOCK_FEEDBACK_RULES);
 
   // Loading states
   const [usersLoading, setUsersLoading] = useState(false);
@@ -1881,6 +2534,7 @@ const App = () => {
           <NavItem id="recipes" label="Recipes CMS" icon={Utensils} activeTab={activeTab} setActiveTab={setActiveTab} />
           <NavItem id="courses" label="Courses LMS" icon={GraduationCap} activeTab={activeTab} setActiveTab={setActiveTab} />
           <NavItem id="news" label="News & Alerts" icon={Newspaper} activeTab={activeTab} setActiveTab={setActiveTab} />
+          <NavItem id="feedback" label="Feedback Logic" icon={Zap} activeTab={activeTab} setActiveTab={setActiveTab} />
           <div className="pt-6 pb-2 px-4 text-xs font-semibold text-gray-400 uppercase tracking-wider">System</div>
           <NavItem id="settings" label="Settings" icon={Settings} activeTab={activeTab} setActiveTab={setActiveTab} />
         </nav>
@@ -1912,6 +2566,7 @@ const App = () => {
           {activeTab === 'recipes' && <RecipeCMS recipes={recipes} setRecipes={setRecipes} categories={recipeCategories} setCategories={setRecipeCategories} showToast={showToast} loading={recipesLoading} error={recipesError} onRefresh={fetchRecipes} />}
           {activeTab === 'courses' && <CourseCMS courses={courses} />}
           {activeTab === 'news' && <NewsCMS news={news} setNews={setNews} categories={newsCategories} setCategories={setNewsCategories} showToast={showToast} />}
+          {activeTab === 'feedback' && <FeedbackLogic rules={feedbackRules} setRules={setFeedbackRules} showToast={showToast} />}
           {activeTab === 'settings' && <SettingsPanel />}
         </div>
       </main>
